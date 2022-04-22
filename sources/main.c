@@ -5,6 +5,8 @@
 #include <kinc/graphics4/texture.h>
 #include <kinc/graphics4/vertexbuffer.h>
 #include <kinc/graphics4/vertexstructure.h>
+#include <kinc/input/keyboard.h>
+#include <kinc/input/mouse.h>
 #include <kinc/io/filereader.h>
 #include <kinc/log.h>
 #include <kinc/math/matrix.h>
@@ -13,6 +15,7 @@
 #include <kinc/window.h>
 
 /* Demo */
+#include <stdint.h>
 #include <stdio.h>
 #include <time.h>
 
@@ -58,8 +61,10 @@ static struct nk_kinc {
 	float width, height;
 	struct nk_context ctx;
 	struct nk_font_atlas atlas;
-	struct nk_vec2 fb_scale;
 	unsigned int text[NK_KINC_TEXT_MAX];
+	uint8_t keyboard_key_state[255];
+	uint8_t mouse_btn_state[16];
+	int mouse_scroll;
 	int text_len;
 } g_kinc = {0};
 
@@ -225,12 +230,6 @@ static void nk_kinc_render(enum nk_anti_aliasing AA) {
 	nk_buffer_clear(&dev->cmds);
 }
 
-static void nk_kinc_font_stash_begin(struct nk_font_atlas **atlas) {
-	nk_font_atlas_init_default(&g_kinc.atlas);
-	nk_font_atlas_begin(&g_kinc.atlas);
-	*atlas = &g_kinc.atlas;
-}
-
 static void nk_kinc_font_stash_end(void) {
 	const void *image;
 	int w, h;
@@ -249,11 +248,9 @@ static struct nk_context *nk_kinc_init() {
 	dev->max_index_buffer = 512 * 1024 * 3;
 	nk_kinc_device_create();
 
-	{
-		struct nk_font_atlas *atlas;
-		nk_kinc_font_stash_begin(&atlas);
-		nk_kinc_font_stash_end();
-	}
+	nk_font_atlas_init_default(&g_kinc.atlas);
+	nk_font_atlas_begin(&g_kinc.atlas);
+	nk_kinc_font_stash_end();
 
 	return &g_kinc.ctx;
 }
@@ -265,10 +262,82 @@ static void nk_kinc_shutdown(void) {
 	memset(&g_kinc, 0, sizeof(g_kinc));
 }
 
+void key_down_callback(int key_code) {
+	g_kinc.keyboard_key_state[key_code] = 1;
+}
+void key_up_callback(int key_code) {
+	g_kinc.keyboard_key_state[key_code] = 0;
+}
+
+void mouse_btn_down(int windw, int btn, int x, int y) {
+	g_kinc.mouse_btn_state[btn] = 1;
+}
+void mouse_btn_up(int windw, int btn, int x, int y) {
+	g_kinc.mouse_btn_state[btn] = 0;
+}
+
+void mouse_scroll(int window, int delta) {
+	g_kinc.mouse_scroll = delta;
+}
+
+int is_keyboard_pressed(int key_code) {
+	return g_kinc.keyboard_key_state[key_code];
+}
+
 void input() {
-	nk_input_begin(&g_kinc.ctx);
-	{}
-	nk_input_end(&g_kinc.ctx);
+	struct nk_context *ctx = &g_kinc.ctx;
+	nk_input_begin(ctx);
+
+	/* mouse */
+	{
+		int mouse_x, mouse_y;
+		kinc_mouse_get_position(0, &mouse_x, &mouse_y);
+		nk_input_motion(ctx, mouse_x, mouse_y);
+		nk_input_scroll(ctx, (struct nk_vec2){0.0f, (float)g_kinc.mouse_scroll});
+
+		nk_input_button(ctx, NK_BUTTON_LEFT, mouse_x, mouse_y, g_kinc.mouse_btn_state[0]);
+		nk_input_button(ctx, NK_BUTTON_RIGHT, mouse_x, mouse_y, g_kinc.mouse_btn_state[1]);
+		nk_input_button(ctx, NK_BUTTON_MIDDLE, mouse_x, mouse_y, g_kinc.mouse_btn_state[2]);
+	}
+
+	/* keyboard */
+	{
+		nk_input_key(ctx, NK_KEY_DEL, is_keyboard_pressed(KINC_KEY_DELETE));
+		nk_input_key(ctx, NK_KEY_ENTER, is_keyboard_pressed(KINC_KEY_RETURN));
+		nk_input_key(ctx, NK_KEY_TAB, is_keyboard_pressed(KINC_KEY_TAB));
+		nk_input_key(ctx, NK_KEY_BACKSPACE, is_keyboard_pressed(KINC_KEY_BACKSPACE));
+		nk_input_key(ctx, NK_KEY_UP, is_keyboard_pressed(KINC_KEY_UP));
+		nk_input_key(ctx, NK_KEY_DOWN, is_keyboard_pressed(KINC_KEY_DOWN));
+		nk_input_key(ctx, NK_KEY_TEXT_START, is_keyboard_pressed(KINC_KEY_HOME));
+		nk_input_key(ctx, NK_KEY_TEXT_END, is_keyboard_pressed(KINC_KEY_END));
+		nk_input_key(ctx, NK_KEY_SCROLL_START, is_keyboard_pressed(KINC_KEY_HOME));
+		nk_input_key(ctx, NK_KEY_SCROLL_END, is_keyboard_pressed(KINC_KEY_END));
+		nk_input_key(ctx, NK_KEY_SCROLL_DOWN, is_keyboard_pressed(KINC_KEY_PAGE_DOWN));
+		nk_input_key(ctx, NK_KEY_SCROLL_UP, is_keyboard_pressed(KINC_KEY_PAGE_UP));
+		nk_input_key(ctx, NK_KEY_SHIFT, is_keyboard_pressed(KINC_KEY_SHIFT));
+
+		if (is_keyboard_pressed(KINC_KEY_CONTROL)) {
+			nk_input_key(ctx, NK_KEY_COPY, is_keyboard_pressed(KINC_KEY_C));
+			nk_input_key(ctx, NK_KEY_PASTE, is_keyboard_pressed(KINC_KEY_V));
+			nk_input_key(ctx, NK_KEY_CUT, is_keyboard_pressed(KINC_KEY_X));
+			nk_input_key(ctx, NK_KEY_TEXT_UNDO, is_keyboard_pressed(KINC_KEY_Z));
+			nk_input_key(ctx, NK_KEY_TEXT_REDO, is_keyboard_pressed(KINC_KEY_R));
+			nk_input_key(ctx, NK_KEY_TEXT_WORD_LEFT, is_keyboard_pressed(KINC_KEY_LEFT));
+			nk_input_key(ctx, NK_KEY_TEXT_WORD_RIGHT, is_keyboard_pressed(KINC_KEY_RIGHT));
+			nk_input_key(ctx, NK_KEY_TEXT_LINE_START, is_keyboard_pressed(KINC_KEY_B));
+			nk_input_key(ctx, NK_KEY_TEXT_LINE_END, is_keyboard_pressed(KINC_KEY_E));
+			nk_input_key(ctx, NK_KEY_TEXT_SELECT_ALL, is_keyboard_pressed(KINC_KEY_A));
+		}
+		else {
+			nk_input_key(ctx, NK_KEY_LEFT, is_keyboard_pressed(KINC_KEY_LEFT));
+			nk_input_key(ctx, NK_KEY_RIGHT, is_keyboard_pressed(KINC_KEY_RIGHT));
+			nk_input_key(ctx, NK_KEY_COPY, 0);
+			nk_input_key(ctx, NK_KEY_PASTE, 0);
+			nk_input_key(ctx, NK_KEY_CUT, 0);
+			nk_input_key(ctx, NK_KEY_SHIFT, 0);
+		}
+	}
+	nk_input_end(ctx);
 }
 
 void render() {
@@ -1558,7 +1627,9 @@ void nuklear_demo_ui(void) {
 
 void update(void) {
 	input();
+
 	nuklear_demo_ui();
+
 	render();
 }
 
@@ -1566,7 +1637,17 @@ int kickstart(int argc, char **argv) {
 	kinc_init("Nuklear", 1024, 768, NULL, NULL);
 	kinc_set_update_callback(update);
 
+	/* input callbacks */
+	kinc_keyboard_set_key_down_callback(&key_down_callback);
+	kinc_keyboard_set_key_up_callback(&key_up_callback);
+	kinc_mouse_set_press_callback(mouse_btn_down);
+	kinc_mouse_set_release_callback(mouse_btn_up);
+	kinc_mouse_set_scroll_callback(mouse_scroll);
+
 	nk_kinc_init();
+
 	kinc_start();
+
+	nk_kinc_shutdown();
 	return 0;
 }
