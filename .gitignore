@@ -1,4 +1,4 @@
 /build
-/Deployment/*.frag
-/Deployment/*.vert
+/Deployment/*
 /.log
+/.cache
